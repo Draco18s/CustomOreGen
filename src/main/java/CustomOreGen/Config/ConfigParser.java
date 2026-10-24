@@ -35,6 +35,7 @@ import CustomOreGen.Util.BiomeDescriptor;
 import CustomOreGen.Util.BlockDescriptor;
 import CustomOreGen.Util.CIStringMap;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.levelgen.WorldOptions;
 
 public class ConfigParser
 {
@@ -120,13 +121,14 @@ public class ConfigParser
         
         validator.addGlobalValidator(Node.ELEMENT_NODE, "Config", new ValidatorRoot.Factory(topLevelNodes));
 
-        if (this.target.worldInfo == null)
+        WorldOptions options = this.target.worldInfo == null ? null : WorldConfig.worldOptions();
+        if (options == null)
         {
             this.rng = null;
         }
         else
         {
-            this.rng = RandomSource.create(this.target.worldInfo.worldGenOptions().seed());
+            this.rng = RandomSource.create(options.seed());
             this.rng.nextInt();
         }
         validator.validate();

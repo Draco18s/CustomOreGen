@@ -38,10 +38,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
-import net.minecraft.world.level.levelgen.structure.StructurePiece;
-import net.minecraft.world.level.levelgen.structure.StructurePieceAccessor;
-import net.minecraft.world.level.levelgen.structure.pieces.StructurePieceSerializationContext;
-import net.minecraft.world.level.levelgen.structure.pieces.StructurePieceType;
 
 public abstract class MapGenOreDistribution extends MapGenStructure implements IOreDistribution
 {
@@ -413,7 +409,7 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 	private StructureGroup getCachedStructureGroup(int chunkX, int chunkZ)
 	{
 		// Moves the group to the most-recently-used end, so cull() evicts the least recently used.
-		return this.structureMap.getAndMoveToLast(ChunkPos.asLong(chunkX, chunkZ));
+		return this.structureMap.getAndMoveToLast(ChunkPos.pack(chunkX, chunkZ));
 	}
 
 	// FIXME: copy-and-pasted this from MapGenBase, because MapGenStructure now declares recursiveGenerate as 'final'.
@@ -448,7 +444,7 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 		{
 			return level.getSeed();
 		}
-		return world.getServer().getWorldData().worldGenOptions().seed();
+		return world.getServer().getWorldGenSettings().options().seed();
 	}
 
 	protected void recursiveGenerate2(LevelAccessor world, int chunkX, int chunkZ, int rootX, int rootZ, ChunkAccess primer)
@@ -472,7 +468,7 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 			if (this.canSpawnStructureAtCoords(chunkX, chunkZ))
 			{
 				group1 = this.createStructureGroup(chunkX, chunkZ);
-				this.structureMap.putAndMoveToLast(ChunkPos.asLong(chunkX, chunkZ), group1);
+				this.structureMap.putAndMoveToLast(ChunkPos.pack(chunkX, chunkZ), group1);
 			}
 		}
 	}
@@ -509,7 +505,7 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 		{
 			int minX = chunkX << 4;
 			int minZ = chunkZ << 4;
-			BoundingBox bb = new BoundingBox(minX, world.getMinBuildHeight(), minZ, minX + 15, world.getMaxBuildHeight() - 1, minZ + 15);
+			BoundingBox bb = new BoundingBox(minX, world.getMinY(), minZ, minX + 15, world.getMaxY(), minZ + 15);
 			ChunkPos chunkPos = new ChunkPos(chunkX, chunkZ);
 			boolean structureFound = false;
 
@@ -736,7 +732,7 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 		public void buildWireframes()
 		{
 			// A group evicted by cull() and rebuilt later must not add its wireframes a second time.
-			if (!wireframedGroups.add(ChunkPos.asLong(this.chunkX, this.chunkZ)))
+			if (!wireframedGroups.add(ChunkPos.pack(this.chunkX, this.chunkZ)))
 			{
 				return;
 			}
@@ -760,42 +756,49 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 		}
 	}
 
-	public class Component extends StructurePiece
+	/**
+	 * One piece of a distribution's layout (a vein segment, cluster or cloud) and the box it can write
+	 * into. These used to be vanilla structure pieces; they are only laid out and populated by COG.
+	 */
+	public class Component
 	{
 		public final StructureGroup structureGroup;
 		public long populatedBlocks;
 		public long placedBlocks;
+		protected BoundingBox boundingBox;
+		// How many links this piece is from the start of its vein or cluster (0 for the first).
+		protected int genDepth;
 
 		public Component(StructureGroup structureGroup, BoundingBox boundingBox)
 		{
-			super(StructurePieceType.BURIED_TREASURE_PIECE, 0, boundingBox);//TODO: need a structure piece type
+			this.boundingBox = boundingBox;
 			this.populatedBlocks = 0L;
 			this.placedBlocks = 0L;
 			this.structureGroup = structureGroup;
 		}
 
-		@Override
-		public void addChildren(StructurePiece p_226835_, StructurePieceAccessor p_226836_, RandomSource p_226837_) {
-			//TODO: addComponentParts?
+		public BoundingBox getBoundingBox()
+		{
+			return this.boundingBox;
 		}
 
-		@Override
-		public void postProcess(WorldGenLevel p_226769_, StructureManager p_226770_, ChunkGenerator p_226771_, RandomSource p_226772_, BoundingBox p_226773_, ChunkPos p_226774_, BlockPos p_226775_) {
-			this.addComponentParts(p_226769_, p_226772_, p_226773_, p_226774_);
+		public int getGenDepth()
+		{
+			return this.genDepth;
 		}
 
 		public boolean addComponentParts(LevelAccessor worldIn, RandomSource randomIn, BoundingBox bounds, ChunkPos pos)
 		{
-			int sizeX = Math.min(bounds.maxX(), super.boundingBox.maxX()) - Math.max(bounds.minX(), super.boundingBox.minX()) + 1;
-			int sizeY = Math.min(bounds.maxY(), super.boundingBox.maxY()) - Math.max(bounds.minY(), super.boundingBox.minY()) + 1;
-			int sizeZ = Math.min(bounds.maxZ(), super.boundingBox.maxZ()) - Math.max(bounds.minZ(), super.boundingBox.minZ()) + 1;
+			int sizeX = Math.min(bounds.maxX(), this.boundingBox.maxX()) - Math.max(bounds.minX(), this.boundingBox.minX()) + 1;
+			int sizeY = Math.min(bounds.maxY(), this.boundingBox.maxY()) - Math.max(bounds.minY(), this.boundingBox.minY()) + 1;
+			int sizeZ = Math.min(bounds.maxZ(), this.boundingBox.maxZ()) - Math.max(bounds.minZ(), this.boundingBox.minZ()) + 1;
 
 			if (sizeX > 0 && sizeY > 0 && sizeZ > 0)
 			{
 				this.populatedBlocks += (long)(sizeX * sizeY * sizeZ);
-				sizeX = super.boundingBox.maxX() - super.boundingBox.minX() + 1;
-				sizeY = Math.min(worldIn.getMaxBuildHeight() - 1, super.boundingBox.maxY()) - Math.max(worldIn.getMinBuildHeight(), super.boundingBox.minY()) + 1;
-				sizeZ = super.boundingBox.maxZ() - super.boundingBox.minZ() + 1;
+				sizeX = this.boundingBox.maxX() - this.boundingBox.minX() + 1;
+				sizeY = Math.min(worldIn.getMaxY(), this.boundingBox.maxY()) - Math.max(worldIn.getMinY(), this.boundingBox.minY()) + 1;
+				sizeZ = this.boundingBox.maxZ() - this.boundingBox.minZ() + 1;
 				long totalVolume = (long)(sizeX * sizeY * sizeZ);
 
 				if (this.populatedBlocks == totalVolume && this.structureGroup != null)
@@ -855,11 +858,11 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 		{
 			if (parent != null)
 			{
-				super.genDepth = parent.genDepth + 1;
+				this.genDepth = parent.genDepth + 1;
 			}
 			else
 			{
-				super.genDepth = 0;
+				this.genDepth = 0;
 			}
 		}
 
@@ -867,7 +870,7 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 		{
 			if (child != null)
 			{
-				child.genDepth = super.genDepth + 1;
+				child.genDepth = this.genDepth + 1;
 			}
 		}
 
@@ -900,17 +903,6 @@ public abstract class MapGenOreDistribution extends MapGenStructure implements I
 				gb.setColor(color);
 			}
 		}
-
-		@Override
-		protected void addAdditionalSaveData(StructurePieceSerializationContext p_192646_, CompoundTag p_192647_) {
-			// TODO Auto-generated method stub
-			
-		}
-
-		//@Override
-		//protected void readAdditional(CompoundTag tagCompound) {
-			// TODO Auto-generated method stub
-		//}
 	}
 
 	@Override

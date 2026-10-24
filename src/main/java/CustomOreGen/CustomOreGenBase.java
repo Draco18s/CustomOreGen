@@ -10,15 +10,16 @@ import org.apache.logging.log4j.Logger;
 
 import CustomOreGen.Server.ServerState;
 import CustomOreGen.Server.WorldConfig;
-import net.minecraftforge.fml.ModContainer;
-import net.minecraftforge.fml.ModList;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.loading.FMLPaths;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.loading.FMLPaths;
 
 @Mod("customoregen")
 public class CustomOreGenBase
 {
     public static CustomOreGenBase instance;
+    private static ModContainer modContainer;
     
     public static final String MODID = "customoregen";
     public static Logger log = LogManager.getLogger();
@@ -29,8 +30,9 @@ public class CustomOreGenBase
 
     private static int _hasMystcraft = 0;
 
-    public CustomOreGenBase() {
+    public CustomOreGenBase(ModContainer container) {
     	instance = this;
+    	modContainer = container;
     }
     
     public static boolean isClassLoaded(String className)
@@ -197,12 +199,7 @@ public class CustomOreGenBase
         return _hasMystcraft == 1;
     }
     
-	private static ModContainer getModContainer() {
-		return ModList.get().getModContainerByObject(instance).get();
-	}
-
 	public static String getDisplayString() {
-		ModContainer metadata = getModContainer();
-    	return metadata.getModId() + " " + metadata.getModInfo().getVersion();
+    	return modContainer.getModId() + " " + modContainer.getModInfo().getVersion();
 	}
 }

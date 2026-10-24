@@ -1,15 +1,35 @@
 package CustomOreGen.Client;
 
+import CustomOreGen.CustomOreGenBase;
 import CustomOreGen.CustomPacketPayload;
 import CustomOreGen.GeometryData;
 import CustomOreGen.Client.ClientState.WireframeRenderMode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.neoforged.neoforge.client.network.event.RegisterClientPayloadHandlersEvent;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 /** Client half of CustomPacketPayloadHandler; kept separate so dedicated servers never load client classes. */
+@EventBusSubscriber(modid = CustomOreGenBase.MODID, value = Dist.CLIENT)
 public class ClientPacketHandler
 {
-	public static void handle(CustomPacketPayload msg)
+	@SubscribeEvent
+	public static void onRegisterPayloadHandlers(RegisterClientPayloadHandlersEvent event)
+	{
+		event.register(CustomPacketPayload.TYPE, ClientPacketHandler::handle);
+	}
+
+	/** Sends a packet to the server. */
+	public static void sendToServer(CustomPacketPayload msg)
+	{
+		ClientPacketDistributor.sendToServer(msg);
+	}
+
+	private static void handle(CustomPacketPayload msg, IPayloadContext context)
 	{
 		Minecraft mc = Minecraft.getInstance();
 
@@ -40,7 +60,7 @@ public class ClientPacketHandler
 			case CommandResponse:
 				if (mc.player != null && msg.data != null)
 				{
-					mc.player.displayClientMessage(Component.literal((String)msg.data), false);
+					mc.player.sendSystemMessage(Component.literal((String)msg.data));
 				}
 				break;
 
@@ -75,7 +95,7 @@ public class ClientPacketHandler
 			{
 				if (mc.player != null)
 				{
-					mc.player.displayClientMessage(Component.literal("§cError: Invalid wireframe mode '" + name + "'"), false);
+					mc.player.sendSystemMessage(Component.literal("§cError: Invalid wireframe mode '" + name + "'"));
 				}
 				return;
 			}
@@ -84,7 +104,7 @@ public class ClientPacketHandler
 
 		if (mc.player != null)
 		{
-			mc.player.displayClientMessage(Component.literal("COG Client wireframe mode: " + ClientState.dgRenderingMode.name()), false);
+			mc.player.sendSystemMessage(Component.literal("COG Client wireframe mode: " + ClientState.dgRenderingMode.name()));
 		}
 	}
 }

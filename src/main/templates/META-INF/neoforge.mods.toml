@@ -1,0 +1,32 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Artistic License 2.0"
+
+[[mods]]
+	modId="${mod_id}"
+	version="${mod_version}"
+	displayName="Custom Ore Generation"
+	authors="JRoush, noogenesis"
+	description='''
+	Allows the player to customize how ore is generated.
+	'''
+	displayURL="https://www.curseforge.com/minecraft/mc-mods/customoregen"
+	iconFile="Logo.png"
+	credits="Thanks to marcopolo1613, Cadde, mossman1223, reteo, Draco18s."
+
+[[mixins]]
+	config="${mod_id}.mixins.json"
+
+[[dependencies.${mod_id}]]
+	modId="neoforge"
+	type="required"
+	versionRange="[${neo_version},)"
+	ordering="NONE"
+	side="BOTH"
+
+[[dependencies.${mod_id}]]
+	modId="minecraft"
+	type="required"
+	versionRange="${minecraft_version_range}"
+	ordering="NONE"
+	side="BOTH"

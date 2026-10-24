@@ -1,17 +1,16 @@
 package CustomOreGen.Util;
 
-import java.util.Iterator;
-import java.util.Set;
-
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.util.ProblemReporter;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.storage.TagValueInput;
 
 @SuppressWarnings("unchecked")
 public class BlockEntityHelper {
@@ -19,8 +18,8 @@ public class BlockEntityHelper {
 	public static void readFromPartialNBT(BlockEntity te, CompoundTag source) {
 		HolderLookup.Provider registries = te.getLevel().registryAccess();
 		CompoundTag dest = te.saveWithFullMetadata(registries);
-		mergeNbt(source, dest);
-		te.loadWithComponents(dest, registries);
+		dest.merge(source);
+		te.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, registries, dest));
 	}
 
 	public static void readFromPartialNBT(LevelAccessor world, int x, int y, int z, CompoundTag source) {
@@ -36,7 +35,7 @@ public class BlockEntityHelper {
 			if (te != null) {
 				BlockEntityHelper.readFromPartialNBT(te, source);
 				BlockState state = world.getBlockState(pos);
-				world.blockUpdated(pos, state.getBlock());
+				world.updateNeighborsAt(pos, state.getBlock());
 			}
 		}
 	}
@@ -76,14 +75,6 @@ public class BlockEntityHelper {
 		} catch (IllegalAccessException e) {
 		}
 		return null;
-	}
-
-	private static void mergeNbt(CompoundTag source, CompoundTag dest) {
-		Iterator<String> keys = ((Set<String>)source.getAllKeys()).iterator(); 
-		while(keys.hasNext()) {
-			String key = keys.next();
-			dest.put(key, source.getCompound(key));
-		}
 	}
 
 }

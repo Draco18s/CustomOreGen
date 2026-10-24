@@ -9,9 +9,18 @@ import java.util.Collections;
 
 import CustomOreGen.Util.GeometryStream;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.resources.Identifier;
 
-public class CustomPacketPayload
+/**
+ * COG's single network payload. The name predates vanilla's CustomPacketPayload, which this implements
+ * (so NeoForge can send it); the type field says what the payload carries.
+ */
+public class CustomPacketPayload implements net.minecraft.network.protocol.common.custom.CustomPacketPayload
 {
+    public static final Type<CustomPacketPayload> TYPE = new Type<>(Identifier.fromNamespaceAndPath(CustomOreGenBase.MODID, "payload"));
+    public static final StreamCodec<FriendlyByteBuf, CustomPacketPayload> STREAM_CODEC = StreamCodec.of((buf, msg) -> encode(msg, buf), CustomPacketPayload::decode);
+
     public final PayloadType type;
     public final Serializable data;
 
@@ -19,6 +28,12 @@ public class CustomPacketPayload
     {
         this.type = type;
         this.data = data;
+    }
+
+    @Override
+    public Type<CustomPacketPayload> type()
+    {
+        return TYPE;
     }
 
     /*
@@ -106,7 +121,7 @@ public class CustomPacketPayload
 
     private static void writeRequest(GeometryRequestData request, FriendlyByteBuf buf)
     {
-        buf.writeResourceLocation(request.dimensionID);
+        buf.writeIdentifier(request.dimensionID);
         buf.writeVarInt(request.chunkX);
         buf.writeVarInt(request.chunkZ);
         buf.writeVarInt(request.batchID);
@@ -114,7 +129,7 @@ public class CustomPacketPayload
 
     private static void readRequest(GeometryRequestData request, FriendlyByteBuf buf)
     {
-        request.dimensionID = buf.readResourceLocation();
+        request.dimensionID = buf.readIdentifier();
         request.chunkX = buf.readVarInt();
         request.chunkZ = buf.readVarInt();
         request.batchID = buf.readVarInt();

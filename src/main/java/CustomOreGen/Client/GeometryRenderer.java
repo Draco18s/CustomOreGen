@@ -8,7 +8,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.mojang.blaze3d.vertex.BufferBuilder;
 
 import CustomOreGen.Util.IGeometryBuilder;
 import CustomOreGen.Util.Transform;
@@ -266,20 +265,19 @@ public class GeometryRenderer implements IGeometryBuilder
     }
 
     /**
-     * Writes everything added so far into two POSITION_COLOR builders: lines into one begun in
-     * DEBUG_LINES mode, triangles and quads (as triangle pairs) into one begun in TRIANGLES mode. Points,
-     * normals and textures are not drawn.
+     * Writes everything added so far into a mesh: lines as line segments, triangles and quads (as
+     * triangle pairs) as triangles. Points, normals and textures are not drawn.
      */
-    public void emit(BufferBuilder lines, BufferBuilder polygons)
+    public void emit(WireframeMesh mesh)
     {
         for (VertexBuffer buffer : this._vertexBuffers)
         {
-            buffer.emit(lines, polygons);
+            buffer.emit(mesh);
         }
 
         if (this._dbgNormalLines != null)
         {
-            this._dbgNormalLines.emit(lines, polygons);
+            this._dbgNormalLines.emit(mesh);
         }
     }
 
@@ -731,7 +729,7 @@ public class GeometryRenderer implements IGeometryBuilder
             this.xBuffer.put(index);
         }
 
-        public void emit(BufferBuilder lines, BufferBuilder polygons)
+        public void emit(WireframeMesh mesh)
         {
             int xCount = this.getIndexCount();
 
@@ -740,29 +738,29 @@ public class GeometryRenderer implements IGeometryBuilder
                 case 1: // lines
                     for (int i = 0; i + 1 < xCount; i += 2)
                     {
-                        this.emitVertex(lines, this.xBuffer.get(i));
-                        this.emitVertex(lines, this.xBuffer.get(i + 1));
+                        this.emitVertex(mesh, false, this.xBuffer.get(i));
+                        this.emitVertex(mesh, false, this.xBuffer.get(i + 1));
                     }
                     break;
 
                 case 4: // triangles
                     for (int i = 0; i + 2 < xCount; i += 3)
                     {
-                        this.emitVertex(polygons, this.xBuffer.get(i));
-                        this.emitVertex(polygons, this.xBuffer.get(i + 1));
-                        this.emitVertex(polygons, this.xBuffer.get(i + 2));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i + 1));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i + 2));
                     }
                     break;
 
                 case 7: // quads, split into two triangles
                     for (int i = 0; i + 3 < xCount; i += 4)
                     {
-                        this.emitVertex(polygons, this.xBuffer.get(i));
-                        this.emitVertex(polygons, this.xBuffer.get(i + 1));
-                        this.emitVertex(polygons, this.xBuffer.get(i + 2));
-                        this.emitVertex(polygons, this.xBuffer.get(i));
-                        this.emitVertex(polygons, this.xBuffer.get(i + 2));
-                        this.emitVertex(polygons, this.xBuffer.get(i + 3));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i + 1));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i + 2));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i + 2));
+                        this.emitVertex(mesh, true, this.xBuffer.get(i + 3));
                     }
                     break;
 
@@ -771,7 +769,7 @@ public class GeometryRenderer implements IGeometryBuilder
             }
         }
 
-        private void emitVertex(BufferBuilder builder, int index)
+        private void emitVertex(WireframeMesh mesh, boolean triangle, int index)
         {
             int base = index * this.getVertexSize();
             float x = this.vBuffer.getFloat(base);
@@ -794,7 +792,15 @@ public class GeometryRenderer implements IGeometryBuilder
                 }
             }
 
-            builder.addVertex(x, y, z).setColor(r, g, b, a);
+            int argb = a << 24 | r << 16 | g << 8 | b;
+            if (triangle)
+            {
+                mesh.addTriangleVertex(x, y, z, argb);
+            }
+            else
+            {
+                mesh.addLineVertex(x, y, z, argb);
+            }
         }
     }
 

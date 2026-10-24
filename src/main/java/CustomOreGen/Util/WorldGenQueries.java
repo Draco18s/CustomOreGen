@@ -1,5 +1,8 @@
 package CustomOreGen.Util;
 
+import java.util.Map;
+import java.util.WeakHashMap;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.QuartPos;
 import net.minecraft.server.level.ServerChunkCache;
@@ -7,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeResolver;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 /**
@@ -20,6 +24,10 @@ import net.minecraft.world.level.levelgen.Heightmap;
 public final class WorldGenQueries
 {
 	private WorldGenQueries() {}
+
+	// Biome lookups go through a resolver built from the level's climate sampler. Samplers keep per-use
+	// state, so each worldgen thread gets its own, kept for as long as the level exists.
+	private static final ThreadLocal<Map<ServerLevel, BiomeResolver>> BIOME_RESOLVERS = ThreadLocal.withInitial(WeakHashMap::new);
 
 	public static ServerLevel serverLevel(LevelAccessor world)
 	{
@@ -50,11 +58,12 @@ public final class WorldGenQueries
 		ServerLevel level = serverLevel(world);
 		if (level == null)
 		{
-			return world.getBiome(new BlockPos(x, y, z)).get();
+			return world.getBiome(new BlockPos(x, y, z)).value();
 		}
-		ServerChunkCache source = level.getChunkSource();
-		return source.getGenerator().getBiomeSource()
-				.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(y), QuartPos.fromBlock(z), source.randomState().sampler())
-				.get();
+		BiomeResolver resolver = BIOME_RESOLVERS.get().computeIfAbsent(level, l -> {
+			ServerChunkCache source = l.getChunkSource();
+			return source.getGenerator().getBiomeSource().createUncachedResolver(source.randomState());
+		});
+		return resolver.getNoiseBiome(QuartPos.fromBlock(x), QuartPos.fromBlock(y), QuartPos.fromBlock(z)).value();
 	}
 }

@@ -16,13 +16,14 @@ import com.google.common.collect.ImmutableList;
 import CustomOreGen.CustomOreGenBase;
 import CustomOreGen.Server.DistributionSettingMap.Copyable;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagKey;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraftforge.registries.ForgeRegistries;
-import net.minecraftforge.registries.tags.ITag;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 
 public class BlockDescriptor implements Copyable<BlockDescriptor>
 {
@@ -117,7 +118,7 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
     }
 
 	public BlockDescriptor set(Block block) {
-		return this.set(ForgeRegistries.BLOCKS.getKey(block).toString());
+		return this.set(BuiltInRegistries.BLOCK.getKey(block).toString());
 	}
 	
     public BlockDescriptor set(String descriptor)
@@ -185,7 +186,7 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
     	Block block = blockState.getBlock();
     	CompoundTag nbt = blockInfo.getNBT();
     	if (nbt != null && !blockState.hasBlockEntity()) {
-    		ResourceLocation name = ForgeRegistries.BLOCKS.getKey(block);
+    		Identifier name = BuiltInRegistries.BLOCK.getKey(block);
     		throw new IllegalArgumentException("NBT specified, but matching block " + 
     				name + " lacks tile entity");
     	}
@@ -212,10 +213,10 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
 	}
 
     /** The tag itself, plus its c: or forge: twin. */
-    public static List<ResourceLocation> equivalentTags(ResourceLocation tag)
+    public static List<Identifier> equivalentTags(Identifier tag)
     {
     	String twin = tag.getNamespace().equals("forge") ? "c" : tag.getNamespace().equals("c") ? "forge" : null;
-    	return twin == null ? List.of(tag) : List.of(tag, ResourceLocation.fromNamespaceAndPath(twin, tag.getPath()));
+    	return twin == null ? List.of(tag) : List.of(tag, Identifier.fromNamespaceAndPath(twin, tag.getPath()));
     }
 
     protected void compileMatches()
@@ -227,17 +228,16 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
             
             for (Descriptor desc : this._descriptors) {
             	if (desc.describesOre) {
-            		ResourceLocation tagName = parseId(desc.description);
+            		Identifier tagName = parseId(desc.description);
             		if (tagName == null) {
             			continue;
             		}
-            		// forge: and c: name the same tags: Forge 1.21 is partway through moving to the shared c:
-            		// namespace, and mods use either, so a tag in one also matches the blocks in the other.
+            		// forge: and c: name the same tags: the configs (and older mods) use forge:, while the shared
+            		// c: namespace is what NeoForge and current mods use, so a tag in one matches the other too.
             		Set<Block> tagged = new LinkedHashSet<Block>();
-            		for (ResourceLocation name : equivalentTags(tagName)) {
-            			ITag<Block> tag = ForgeRegistries.BLOCKS.tags().getTag(TagKey.create(ForgeRegistries.Keys.BLOCKS, name));
-            			if (tag.isBound()) {
-            				tag.stream().forEach(tagged::add);
+            		for (Identifier name : equivalentTags(tagName)) {
+            			for (Holder<Block> holder : BuiltInRegistries.BLOCK.getTagOrEmpty(TagKey.create(Registries.BLOCK, name))) {
+            				tagged.add(holder.value());
             			}
             		}
             		// A tag nothing installed defines (e.g. forge:ores/zinc without a zinc mod) matches nothing,
@@ -253,7 +253,7 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
             			}
             		}
             	} else if (desc.regexp) {
-            		for (Block block : ForgeRegistries.BLOCKS) {
+            		for (Block block : BuiltInRegistries.BLOCK) {
             			//desc.regexMatch compares against states
                     	float[] weights = desc.regexMatch(block);
                     	this.add(block, desc.nbt, weights[0]);
@@ -280,13 +280,13 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
                     	}
                     }
             	} else {
-            		ResourceLocation id = parseId(desc.getBlockName());
+            		Identifier id = parseId(desc.getBlockName());
             		/*
             		 * TODO: support block state on 'desc' and construct + register here
             		 */
             		// getValue() returns air for unknown IDs, which would make every outdated ID mean "air".
-            		if (id != null && ForgeRegistries.BLOCKS.containsKey(id))
-            		  this.add(ForgeRegistries.BLOCKS.getValue(id), desc.nbt, desc.weight);
+            		if (id != null && BuiltInRegistries.BLOCK.containsKey(id))
+            		  this.add(BuiltInRegistries.BLOCK.getValue(id), desc.nbt, desc.weight);
             		else if (id != null)
             			warnOnce("Block '" + desc.getBlockName() + "' is not registered; it matches nothing.");
             	}
@@ -429,7 +429,7 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
         	float weight = entry.getValue().weight;
             Block block = entry.getKey().getBlock();
             
-            breakdown[i] = ForgeRegistries.BLOCKS.getKey(block).toString();
+            breakdown[i] = BuiltInRegistries.BLOCK.getKey(block).toString();
             breakdown[i] += " (" + weight + ")";
             
             ++i;
@@ -452,9 +452,9 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
      * A namespaced ID, or null (with a warning) if it isn't a valid one. Pre-1.13 configs use IDs such as
      * "Mekanism:OreBlock" or "minecraft:sand:1" (capitals, metadata) that are no longer valid.
      */
-    private static ResourceLocation parseId(String id)
+    private static Identifier parseId(String id)
     {
-    	ResourceLocation location = ResourceLocation.tryParse(id);
+    	Identifier location = Identifier.tryParse(id);
     	if (location == null)
     	{
     		warnOnce("'" + id + "' is not a valid block or tag ID (capitals and :metadata are pre-1.13); it matches nothing.");
@@ -504,7 +504,7 @@ public class BlockDescriptor implements Copyable<BlockDescriptor>
         public float[] regexMatch(Block block)
         {
             float[] weights = new float[1];
-            String name = ForgeRegistries.BLOCKS.getKey(block).toString();
+            String name = BuiltInRegistries.BLOCK.getKey(block).toString();
         	
             if (!this.getPattern().matcher(name).matches())
             {

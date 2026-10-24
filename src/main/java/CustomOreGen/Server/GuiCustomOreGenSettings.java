@@ -1,31 +1,34 @@
 package CustomOreGen.Server;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Vector;
-import java.util.function.Consumer;
 
 import CustomOreGen.Server.ConfigOption.DisplayGroup;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractButton;
-import net.minecraft.client.gui.components.AbstractSelectionList;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.ObjectSelectionList;
+import net.minecraft.client.gui.components.ContainerObjectSelectionList;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.components.tabs.GridLayoutTab;
+import net.minecraft.client.gui.components.tabs.MenuTabBar;
 import net.minecraft.client.gui.components.tabs.TabManager;
-import net.minecraft.client.gui.components.tabs.TabNavigationBar;
+import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.InputWithModifiers;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.MutableComponent;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.api.distmarker.OnlyIn;
 
-@OnlyIn(Dist.CLIENT)
+/**
+ * The "Custom Ore Generation..." screen opened from Create World: one tab per display group, and a
+ * scrolling list of that group's options. Changing a choice whose display is dynamic reloads the config
+ * (refreshGui = 2) so options it shows or hides appear; Defaults reloads it from scratch (refreshGui = 3).
+ */
 public class GuiCustomOreGenSettings extends Screen
 {
 	protected final Screen _parentGui;
@@ -33,13 +36,11 @@ public class GuiCustomOreGenSettings extends Screen
 	protected Button _doneButton = null;
 	protected Button _resetButton = null;
 	protected GuiCustomOreGenSettings.GuiOptionSlot _optionPanel = null;
-	//protected GuiGroupPanel _groupPanel = null;
-	protected String _toolTip = null;
 
-	private final TabManager tabManager = new TabManager(this::addRenderableWidget, (p_267853_) -> {
-		this.removeWidget(p_267853_);
-	});
-	private TabNavigationBar tabNavigationBar;
+	// Selecting a tab rebuilds the option list for its group.
+	private final TabManager tabManager = new TabManager(this::addRenderableWidget, this::removeWidget,
+			tab -> this.refreshGui = Math.max(this.refreshGui, 1), tab -> {});
+	private MenuTabBar tabNavigationBar;
 
 	public GuiCustomOreGenSettings(Screen parentGui)
 	{
@@ -52,10 +53,9 @@ public class GuiCustomOreGenSettings extends Screen
 	{
 		super.init();
 		super.clearWidgets();
-		//ConfigOption.DisplayGroup currentGroup = this._groupPanel == null ? null : this._groupPanel.getSelectedGroup();
 
 		ConfigOption.DisplayGroup currentGroup = tabNavigationBar == null ? null : ((DisplayGroupTab)tabManager.getCurrentTab()).group;
-		
+
 		if (this.refreshGui >= 2)
 		{
 			if (this.refreshGui >= 3)
@@ -105,14 +105,9 @@ public class GuiCustomOreGenSettings extends Screen
 		this.refreshGui = 0;
 		Vector<ConfigOption.DisplayGroup> visibleGroups1 = new Vector<DisplayGroup>();
 		Vector<ConfigOption> visibleOptions1 = new Vector<ConfigOption>();
-		
-		TabNavigationBar.Builder bld = TabNavigationBar.builder(this.tabManager, this.width);
-		/*.addTabs(
-				new GuiCustomOreGenSettings.GameTab(),
-				new CreateWorldScreen.WorldTab(),
-				new CreateWorldScreen.MoreTab()
-			);*/
-		
+
+		MenuTabBar.Builder bld = MenuTabBar.builder(this.tabManager, this.width);
+
 		nextOption: for (ConfigOption option : WorldConfig.loadedOptionOverrides[0]) {
 
 			ConfigOption.DisplayGroup group;
@@ -128,7 +123,7 @@ public class GuiCustomOreGenSettings extends Screen
 				}
 
 				visibleGroups1.add((ConfigOption.DisplayGroup)option);
-				bld.addTabs(new GuiCustomOreGenSettings.DisplayGroupTab((ConfigOption.DisplayGroup)option));
+				bld.addTab(new GuiCustomOreGenSettings.DisplayGroupTab((ConfigOption.DisplayGroup)option));
 			}
 			else
 			{
@@ -149,87 +144,31 @@ public class GuiCustomOreGenSettings extends Screen
 			this.tabNavigationBar.selectTab(0, false);
 		}
 		this.addRenderableWidget(this.tabNavigationBar);
-		//this._groupPanel = new GuiGroupPanel(0, 20, super.width, 20, currentGroup, visibleGroups1, this);
-		this._optionPanel = new GuiOptionSlot(Minecraft.getInstance(), visibleGroups1.isEmpty() ? 16 : 40, super.height - 30,  25, visibleOptions1, this);
-		//TODO: fix buttons
-		//this._optionPanel.registerScrollButtons(1, 2);
+		int listTop = visibleGroups1.isEmpty() ? 16 : 40;
+		this._optionPanel = this.addRenderableWidget(new GuiOptionSlot(Minecraft.getInstance(), listTop, super.height - 30, 25, visibleOptions1));
 		// Rebuilt on every init so they follow the current screen size; clearWidgets() above removed the old ones.
-		this._doneButton = this.addRenderableWidget(Button.builder(makeComponent("Done"), this::actionPerformed)
+		this._doneButton = this.addRenderableWidget(Button.builder(Component.literal("Done"), this::actionPerformed)
 				.pos(super.width / 2 - 155, super.height - 24)
 				.size(150, 20).build());
-		this._resetButton = this.addRenderableWidget(Button.builder(makeComponent("Defaults"), this::actionPerformed)
+		this._resetButton = this.addRenderableWidget(Button.builder(Component.literal("Defaults"), this::actionPerformed)
 				.pos(super.width / 2 +5, super.height - 24)
 				.size(150, 20).build());
 		this.repositionElements();
 	}
-	
+
 	private boolean checkGroup(DisplayGroup group, DisplayGroup displayGroup) {
 		if(group == null || displayGroup == null) return group != displayGroup;
 		return !group.equals(displayGroup);
 	}
 
+	@Override
 	public void repositionElements() {
 		if (this.tabNavigationBar != null) {
-			this.tabNavigationBar.setWidth(this.width);
-			this.tabNavigationBar.arrangeElements();
+			this.tabNavigationBar.arrangeElements(this.width);
 			int i = this.tabNavigationBar.getRectangle().bottom();
 			ScreenRectangle screenrectangle = new ScreenRectangle(0, i, this.width, this.height - i);
 			this.tabManager.setTabArea(screenrectangle);
 		}
-	}
-
-	private Component makeComponent(String string) {
-		return Component.literal(string);
-	}
-
-	@Override
-	public boolean mouseClicked(double p_mouseClicked_1_, double p_mouseClicked_3_, int p_mouseClicked_5_) {
-		for(GuiEventListener iguieventlistener : this.children()) {
-			if (iguieventlistener.mouseClicked(p_mouseClicked_1_, p_mouseClicked_3_, p_mouseClicked_5_)) {
-				this.setFocused(iguieventlistener);
-				if (p_mouseClicked_5_ == 0) {
-					this.setDragging(true);
-				}
-
-				return true;
-			}
-		}
-		//this._optionPanel.mouseClicked(p_mouseClicked_1_, p_mouseClicked_3_, p_mouseClicked_5_);
-		//this._groupPanel.mouseClicked(p_mouseClicked_1_, p_mouseClicked_3_, p_mouseClicked_5_);
-		for(IOptionControl control : _optionPanel._optionControls) {
-			GuiEventListener wid = control.getControl();
-			if(wid.mouseClicked(p_mouseClicked_1_, p_mouseClicked_3_, p_mouseClicked_5_)) {
-				this.setFocused(wid);
-				if (p_mouseClicked_5_ == 0) {
-					this.setDragging(true);
-				}
-
-				return true;
-			}
-		}
-		/*if(_groupPanel.isInScrollArea((int)p_mouseClicked_1_, (int)p_mouseClicked_3_)) {
-			int j = _groupPanel.getScrollPos();
-			if(j > 0) {
-				
-			}
-		}*/
-		return false;
-	}
-	
-	
-
-	@Override
-	public boolean mouseDragged(double p_mouseDragged_1_, double p_mouseDragged_3_, int p_mouseDragged_5_, double p_mouseDragged_6_, double p_mouseDragged_8_) {
-		if(_optionPanel != null)
-			_optionPanel.mouseDragged(p_mouseDragged_1_, p_mouseDragged_3_, p_mouseDragged_5_, p_mouseDragged_6_, p_mouseDragged_8_);
-		return super.mouseDragged(p_mouseDragged_1_, p_mouseDragged_3_, p_mouseDragged_5_, p_mouseDragged_6_, p_mouseDragged_8_);
-	}
-
-	@Override
-	public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-		if(_optionPanel != null)
-			_optionPanel.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-		return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
 	}
 
 	protected void actionPerformed(Button button)
@@ -243,18 +182,17 @@ public class GuiCustomOreGenSettings extends Screen
 			this.refreshGui = 3;
 		}
 	}
-	
-	@Override
-	public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-		// Screen.render draws the background (only one blur is allowed per frame) and then the widgets.
-		super.render(graphics, mouseX, mouseY, partialTick);
-		this._optionPanel.render(graphics, mouseX, mouseY, partialTick);
-		graphics.drawCenteredString(font, "CustomOreGen Options", super.width / 2, tabNavigationBar.getRectangle().bottom() + 4, 16777215);
-		
-		if (this._toolTip != null) {
-			this.setTooltipForNextRenderPass(Component.literal(_toolTip));
-		}
 
+	@Override
+	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+		super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+		graphics.centeredText(font, "CustomOreGen Options", super.width / 2, tabNavigationBar.getRectangle().bottom() + 4, 0xFFFFFFFF);
+	}
+
+	// Widgets are rebuilt between frames, not while one is being drawn.
+	@Override
+	public void tick() {
+		super.tick();
 		if (this.refreshGui > 0)
 		{
 			this.init();
@@ -264,105 +202,87 @@ public class GuiCustomOreGenSettings extends Screen
 	// Escape and Done both return to the screen that opened us (Create World), not to no screen.
 	@Override
 	public void onClose() {
-		super.minecraft.setScreen(_parentGui);
+		super.minecraft.gui.setScreen(_parentGui);
 	}
 
 	@Override
-	public boolean keyPressed(int p_100875_, int p_100876_, int p_100877_) {
-		if (this.tabNavigationBar.keyPressed(p_100875_)) {
-			return true;
-		} else if (super.keyPressed(p_100875_, p_100876_, p_100877_)) {
-			return true;
-		}
-		return false;
+	public boolean keyPressed(KeyEvent event) {
+		return this.tabNavigationBar.keyPressed(event) || super.keyPressed(event);
 	}
-	
+
 	private class DisplayGroupTab extends GridLayoutTab {
-		public DisplayGroup group;
-		
+		public final DisplayGroup group;
+
 		public DisplayGroupTab(DisplayGroup option) {
 			super(Component.literal(option.getLocalizedDisplayName()));
 			group = option;
 		}
-
-		public void visitChildren(Consumer<AbstractWidget> p_268098_) {
-			super.visitChildren(p_268098_);
-			GuiCustomOreGenSettings.this.refreshGui = 1;
-		}
 	}
 
-	public class GuiOptionSlot extends AbstractSelectionList<GuiOptionSlot.Entry> {
-		protected final Screen _parentGui;
-		protected final Vector<IOptionControl> _optionControls;
-		protected IOptionControl _clickTarget;
-		
-		public GuiOptionSlot(Minecraft instance, int y0, int y1, int slotHeight, Vector<ConfigOption> options, GuiCustomOreGenSettings parentGui) {
+	/** One row per option: its name on the left (hover for the description) and its control on the right. */
+	public class GuiOptionSlot extends ContainerObjectSelectionList<GuiOptionSlot.OptionEntry> {
+
+		public GuiOptionSlot(Minecraft instance, int y0, int y1, int slotHeight, Vector<ConfigOption> options) {
 			super(instance, GuiCustomOreGenSettings.this.width, y1 - y0, y0, slotHeight);
-			this._parentGui = parentGui;
-			this._optionControls = new Vector<IOptionControl>();
-			this._clickTarget = null;
-			
-			for (int c = 0; c < options.size(); ++c)
-			{
-				ConfigOption option = options.get(c);
+			int controlX = 2 * width / 5 + 15;
+			int controlW = width / 10 + 100;
 
-				if (option instanceof ChoiceOption)
+			for (ConfigOption option : options)
+			{
+				if (option instanceof ChoiceOption choice)
 				{
-					this._optionControls.add(new GuiChoiceButton(2 * width / 5 + 15, 0, width / 10 + 100, slotHeight - 6, (ChoiceOption)option));
-					this.addEntry(new Entry());
+					this.addEntry(new OptionEntry(new GuiChoiceButton(controlX, 0, controlW, slotHeight - 6, choice)));
 				}
-				else if (option instanceof NumericOption)
+				else if (option instanceof NumericOption numeric)
 				{
-					this._optionControls.add(new GuiNumericSlider(2 * width / 5 + 15, 0, width / 10 + 100, slotHeight - 6, (NumericOption)option));
-					this.addEntry(new Entry());
+					this.addEntry(new OptionEntry(new GuiNumericSlider(controlX, 0, controlW, slotHeight - 6, numeric)));
 				}
 			}
 		}
 
+		// Rows span the screen; the name and control are placed by screen position, not row position.
 		@Override
-		protected int getItemCount() {
-			return _optionControls.size();
+		public int getRowWidth() {
+			return this.width - 20;
 		}
 
-		@Override
-		protected void renderItem(GuiGraphics graphics, int mouseX, int mouseY, float partialTick, int index, int slotX, int slotY, int slotW, int slotH) {
-			IOptionControl optCtrl = (IOptionControl)this._optionControls.get(index);
-			ConfigOption option = optCtrl.getOption();
-			AbstractWidget control = optCtrl.getControl();
-			String optionName = option.getLocalizedDisplayName();
-			int nameW = font.width(optionName);
-			int nameX = 2 * width / 5 - 15 - nameW;
-			int nameH = font.lineHeight;
-			int nameY = slotY + 8;
-			graphics.drawString(font, Component.literal(optionName), nameX, nameY, 16777215);
+		class OptionEntry extends ContainerObjectSelectionList.Entry<OptionEntry> {
+			private final IOptionControl control;
 
-			if (mouseX >= nameX && mouseX <= nameX + nameW && mouseY >= nameY && mouseY <= nameY + nameH && this.isMouseOver(mouseX, mouseY))
-			{
-				_toolTip = option.getLocalizedDescription();
-			}
-			//TODO: fix this
-			//if(control == null) return;
-			control.setY(slotY + 3);
-			control.render(graphics, mouseX, mouseY, partialTick);
-		}
-
-		@Override
-		protected void updateWidgetNarration(NarrationElementOutput p_169152_) {
-			
-		}
-		
-		private static class Entry extends ObjectSelectionList.Entry<GuiOptionSlot.Entry> {
-			@Override
-			public void render(GuiGraphics p_93523_, int p_93524_, int p_93525_, int p_93526_, int p_93527_, int p_93528_, int p_93529_, int p_93530_, boolean p_93531_, float p_93532_) {
-				
+			OptionEntry(IOptionControl control) {
+				this.control = control;
 			}
 
 			@Override
-			public Component getNarration() {
-				return null;
+			public void extractContent(GuiGraphicsExtractor graphics, int mouseX, int mouseY, boolean hovered, float a) {
+				ConfigOption option = this.control.getOption();
+				String optionName = option.getLocalizedDisplayName();
+				int nameW = font.width(optionName);
+				int nameX = 2 * GuiOptionSlot.this.width / 5 - 15 - nameW;
+				int nameY = this.getContentY() + 6;
+				graphics.text(font, Component.literal(optionName), nameX, nameY, 0xFFFFFFFF);
+
+				if (mouseX >= nameX && mouseX <= nameX + nameW && mouseY >= nameY && mouseY <= nameY + font.lineHeight)
+				{
+					graphics.setTooltipForNextFrame(Component.literal(option.getLocalizedDescription()), mouseX, mouseY);
+				}
+
+				AbstractWidget widget = this.control.getControl();
+				widget.setY(this.getContentY() + 1);
+				widget.extractRenderState(graphics, mouseX, mouseY, a);
+			}
+
+			@Override
+			public List<? extends GuiEventListener> children() {
+				return List.of(this.control.getControl());
+			}
+
+			@Override
+			public List<? extends NarratableEntry> narratables() {
+				return List.of(this.control.getControl());
 			}
 		}
-		
+
 		class GuiNumericSlider extends AbstractSliderButton implements IOptionControl {
 			private final NumericOption _numeric;
 
@@ -384,7 +304,7 @@ public class GuiCustomOreGenSettings extends Screen
 
 			@Override
 			protected void updateMessage() {
-				
+
 			}
 
 			@Override
@@ -398,16 +318,16 @@ public class GuiCustomOreGenSettings extends Screen
 					val /= 10L;
 					base /= 10L;
 				}
-				
+
 				super.setMessage(Component.literal(String.format("%." + prec + "f", new Object[] {Double.valueOf(this._numeric.getDisplayValue())})));
 			}
-			
+
 		}
-		
+
 		class GuiChoiceButton extends AbstractButton implements IOptionControl {
 			private final ChoiceOption _choice;
 			private final int _maxWidth;
-			
+
 			public GuiChoiceButton(int x, int y, int w, int h, ChoiceOption choice) {
 				super(x, y, w, h, Component.literal(choice.getLocalizedDisplayValue()));
 				_choice = choice;
@@ -426,17 +346,23 @@ public class GuiCustomOreGenSettings extends Screen
 			}
 
 			@Override
-			public void onPress() {
+			public void onPress(InputWithModifiers input) {
 				this._choice.setValue(this._choice.nextPossibleValue());
 				this.onValueChanged();
 				refreshGui = this._choice.getDisplayState() == ConfigOption.DisplayState.shown_dynamic ? 2 : 1;
 			}
 
 			@Override
-			protected void updateWidgetNarration(NarrationElementOutput p_259858_) {
-				// TODO Auto-generated method stub
+			protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
+				this.extractDefaultSprite(graphics);
+				this.extractDefaultLabel(graphics.textRendererForWidget(this, GuiGraphicsExtractor.HoveredTextEffects.NONE));
 			}
-			
+
+			@Override
+			protected void updateWidgetNarration(NarrationElementOutput output) {
+				this.defaultButtonNarrationText(output);
+			}
+
 			protected void onValueChanged()
 			{
 				super.setMessage(Component.literal(_choice.getLocalizedDisplayValue()));
